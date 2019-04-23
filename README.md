@@ -1,7 +1,7 @@
 # ML_examples
 
-reg: Linear regression 
-class: Classification 
-nn: Neural network 
-lstm: Long-short term memory 
-rnn: Recurrent neural network 
+\nreg: Linear regression 
+\nclass: Classification 
+\nnn: Neural network 
+\nlstm: Long-short term memory 
+\nrnn: Recurrent neural network 
