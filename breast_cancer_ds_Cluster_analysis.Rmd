@@ -1,0 +1,451 @@
+---
+title: "DENETİMSİZ İSTATİSTİKSEL ÖĞRENME"
+author: "2019900077 - Muhammet Fatih POLAT"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## Veri Girişi
+
+Kategoriler :
+  
+  1. Diagnosis : Tanı (Benign, Malignant)
+  2. radius : Hücre çapı
+  3. texture : Hücre dokusu
+  4. perimeter : Hücrenin çevresi
+  5. area : Hücrenin alanı
+  6. smoothness : Hücrenin pürüzsüzlüğü
+  7. compactness : Hücre yoğunluğu
+  8. concavity : İçbükeylik
+  9. concave_points : İçbükey noktaları
+  10. symmetry : Hücrenin simetrikliği
+  11. fractal_dim : Hücrenin girift yapısı
+
+```{r}
+veri = read.csv("/home/mfatihpolat/Documents/YL-DSM/Denetimsiz Öğrenme/wdbc.data", header = FALSE, na.strings = "?")
+head(veri)
+```
+
+```{r, echo=FALSE, results="hide"}
+# Visualization
+library(factoextra)
+
+library(FactoMineR)
+library(dplyr)
+library(caret)
+
+# K-medoids (pam)
+library(cluster)
+
+# Density Based
+library(dbscan)
+
+# Mixture Models (Model Based)
+library(mclust)
+
+# Küme geçerliliği
+library(clValid)
+library(fpc)
+```
+
+
+```{r}
+df = data.frame(veri[,c(2:12)])
+head(df)
+```
+
+```{r}
+df = `colnames<-`(df, c("Diagnosis", "radius", "texture", "perimeter", "area", "smoothness", "compactness", "concavity", "concave_points", "symmetry", "fractal_dim"))
+```
+
+```{r}
+head(df)
+```
+
+
+```{r}
+dim(df)
+```
+
+```{r}
+summary(df)
+```
+
+- Yukarıda görüldüğü üzere verilerin aldığı değer aralıkları arasında yüksek farklar bulunmaktadır. Bu farklar kutu grafiği üzerinde daha anlaşılır şekilde görülebilecektir.
+- Bazı değerlerin birbirinden türetildiği de gözlenmektedir (radius, perimeter, area). Bunlar yüksek korelasyona sahip olacağından temel bileşenler analizinde daha fazla boyut indirgenmesine yardımcı olacaktır.
+
+## Kutu Grafiği
+
+```{r, fig.width=14, fig.height=6}
+boxplot(df[,2:10])
+```
+
+* Yukarıdaki grafikte görüldüğü üzere, sütunların değer aralıkları arasında yüksek bir fark olduğu anlaşılmaktadır. Bu durumu düzeltmek adına özellikler ölçekleme işlemine tabi tutulmuştur. 
+
+```{r}
+scdf = scale(df[,2:11])
+```
+
+```{r, fig.width=14, fig.height=6}
+boxplot(scdf)
+```
+
+* Yukarıdaki grafikte yeni değer aralıklarındaki veriler görülmektedir.
+
+### Özelliklerin Birbiri ile Korelasyonları
+
+```{r, fig.width=12, echo=FALSE}
+require(graphics)
+
+reg = function(x, y, col) abline(lm(y~x), col=col) 
+
+panel.lm = function (x, y, col = par("col"), bg = NA, pch = par("pch"), 
+                      cex = 1, col.smooth = "red", span = 2/3, iter = 3, ...)  {
+  points(x, y, pch = pch, col = col, bg = bg, cex = cex)
+  ok = is.finite(x) & is.finite(y)
+  if (any(ok)) reg(x[ok], y[ok], col.smooth)
+}
+
+pairs(df[,2:11], panel = panel.lm,
+      cex = 1, pch = 19, col = adjustcolor(4, .4), cex.labels = 2, 
+      font.labels = 1)
+```
+
+* Not: Sadece yüksek korelasyon gösterenler yazılmıştır.
+
+1. radius
+
+  - perimeter : Güçlü pozitif korelasyon
+  - area : Güçlü pozitif korelasyon
+  - compactness : Pozitif korelasyon
+  - concavity : Güçlü pozitif korelasyon
+  - concave_points: Güçlü pozitif korelasyon
+  
+2. texture
+
+3. perimeter
+
+  - area : Güçlü pozitif korelasyon
+  - compactness : Pozitif korelasyon
+  - concavity : Güçlü pozitif korelasyon
+  - concave_points: Güçlü pozitif korelasyon
+
+4. area
+
+  - compactness : Pozitif korelasyon
+  - concavity : Güçlü pozitif korelasyon
+  - concave_points: Güçlü pozitif korelasyon
+  
+5. smoothness
+
+  - compactness : Pozitif korelasyon
+  - concavity : Pozitif korelasyon
+  - concave_points: Pozitif korelasyon
+  - symmetry: Pozitif korelasyon
+  - fractal_dim: Pozitif korelasyon
+
+6. compactness
+
+  - concavity : Güçlü pozitif korelasyon
+  - concave_points: Güçlü pozitif korelasyon
+  - symmetry: Pozitif korelasyon
+  - fractal_dim: Pozitif korelasyon
+  
+7. concavity 
+
+  - concave_points: Güçlü pozitif korelasyon
+  - symmetry: Pozitif korelasyon
+  - fractal_dim: Pozitif korelasyon
+
+8. concave_points
+
+9. symmetry
+
+  - fractal_dim: Pozitif korelasyon
+  
+```{r}
+cor(df[,2:11])
+```
+
+* Korelasyon tablosundan ve grafikten anlaşılacağı gibi sütunların çoğunluğunda korelasyon görülmektedir. Ayrıca türetilmiş verilerin bulunduğu sütunlar (area, perimeter) da vardır. Bunun sonucunda da temel bileşenler analizinde az miktarda bileşenin yeterli açıklayıcılığa sahip olması beklemektedir.
+
+## PCA (Temel Bileşenler Analizi)
+
+```{r}
+pca = PCA(scdf)
+```
+
+```{r, fig.width=14, fig.height=6}
+fviz_pca_biplot(pca)
+```
+
+```{r, fig.width=14, fig.height=6}
+fviz_screeplot(pca)
+```
+
+```{r}
+pca$eig
+```
+
+- Screeplot üzerinden dirsek metodu ile seçim yaparsak 3 temel bileşenin uygun olacağı görülmektedir.
+- Ancak toplam varyansın ~80% i yeterli görüldüğü için 2 temel bileşen ile çalışmaya devam edilecektir.
+
+
+```{r fig.width=14, fig.height=6}
+boxplot(pca$ind$coord)
+```
+
+- Yukarıda verilerin yeni değerlerinde (ilk iki bileşen için) outlier değer çok fazla görülmemektedir. Bu nedenle mesafe fonksiyonu "Öklid" olarak seçilebilir. 
+
+```{r}
+pca$var$cor[,1:2]
+```
+
+- Dim.1 :  İlk temel bileşen üzerine en çok etkiyi oluşturan değişkenler; radius, perimeter, area, compactness, concavity, concave_points ve bunlardan daha az da olsa yine de etkili olan smoothness ve symmetry bulunmaktadır. Bu temel bileşene kısaca ebatların ve içbükeyliğin etki ettiği söylenebilir.
+
+- Dim.2 : İkinci temel bileşen üzerine en çok etkiyi oluşturan değişkenler; pozitif yönde smoothness, symmetry ve en yüksek etki sahibi olan fractal_dim bulunmaktadır. Negatif yönde ise radius, perimeter ve area bulunmaktadır. Bu temel bileşene kısaca hücrenin fraktal örüntüsü (hücre yüzeyindeki girintili çıkıntılı alanlar) ve hücrenin simetrik oluşu ile hücrenin pürüzsüzlüğünün etki ettiği söylenebilir.
+
+```{r}
+# İlk 10 verinin yeni eksen değerleri
+pca$ind$coord[1:10,1:2]
+```
+
+```{r}
+pc12 = pca$ind$coord[,1:2]
+```
+
+```{r}
+# Görselleştirmede problem olduğundan bu fonksiyon ile de PCA yapılmıştır.
+pc = prcomp(scdf)
+```
+
+```{r, fig.width=12, fig.height=6}
+fviz_dist(dist.obj = dist(pc12))
+```
+
+- Yukarıdaki Heatmap'e bakıldığında az bir miktar da olsa verinin outlier değer içerdiği farkedilmektedir. (Grafiğin en sağı)
+
+## Kümeleme Aşaması
+
+```{r}
+templist = data.frame(df$Diagnosis, pc12)
+head(templist)
+```
+
+
+
+## K-Means
+
+```{r, fig.width=12, fig.height=6}
+fviz_nbclust(pc12, FUNcluster = kmeans)
+```
+
+- Silhoutte yönteminin önerdiği küme sayısı 2'dir.
+
+```{r}
+kort = kmeans(pc12, centers = 2)
+```
+
+```{r, fig.width=12, fig.height=6}
+fviz_pca_ind(pc, habillage = kort$cluster)
+```
+
+- Kmeans algoritması ile ayrılmış kümeler yukarıda görülmektedir. Ancak seçilecek algoritmayı küme geçerliliği istatistikleri belirleyecektir.
+
+
+## K-Medoids
+
+```{r, fig.width=12, fig.height=6}
+fviz_nbclust(pc12, FUNcluster = pam)
+```
+
+- Silhoutte yönteminin önerdiği küme sayısı 2'dir.
+
+```{r}
+kmed = pam(pc12, 2, metric = "euclidean")
+```
+
+```{r, fig.width=12, fig.height=6}
+fviz_pca_ind(pc, habillage = kmed$clustering)
+```
+
+- Kmedoids, Kmeans algoritmasının "B" olarak kümelediği 505 numaralı veriyi "M" olarak kümelemiştir. 
+
+## Hierarchical Clustering
+
+```{r, fig.width=12, fig.height=6}
+fviz_nbclust(pc12, FUNcluster = hcut)
+```
+
+- Silhoutte yönteminin önerdiği küme sayısı 2'dir. En büyük iki dalın alınması uygun olacaktır.
+
+
+```{r}
+hier = hcut(pc12)
+```
+
+```{r, fig.width=12, fig.height=6}
+fviz_dend(hier)
+```
+
+```{r}
+grup = cutree(hier, k = 2)
+table(grup)
+```
+
+- Bu yöntemle oluşturulan kümelerin veri sayılarının gerçek sınıf değerlerine yakın olduğu görülmektedir.
+
+## Model Based Clustering
+
+```{r, results="hide"}
+modbased = Mclust(pc12)
+summary(modbased)
+```
+
+
+```{r, fig.width=12, fig.height=6}
+fviz_mclust(modbased, "BIC", palette = "jco")
+```
+
+- Model Based yöntemde oluşturulacak en uygun küme sayısı 2'dir. Fonksiyon da gruplandırma işlemini 2 kümeye göre yapmıştır.
+
+```{r, fig.width=12, fig.height=6}
+fviz_mclust(modbased, "classification", palette = "jco", geom = "point", pointsize = 1.5)
+```
+
+
+## Density Based Clustering
+
+```{r}
+densb = dbscan(pc12, eps = 0.5)
+```
+
+```{r}
+densb
+```
+
+- Fonksiyon kendi içeriği itibari ile uygun küme sayısını 3 olarak belirlemiş ve 61 adet gürültü olduğunu öne sürmüştür. Gerçek değerlerle karşılaştırıldığında tahmin yönünden en kötü sonucu bu yöntem vermiştir.
+
+```{r, fig.width=12, fig.height=6}
+fviz_pca_ind(pc, habillage = densb$cluster)
+```
+
+
+
+## Küme Geçerliliği İstatistikleri ile Uygun Yöntemi Belirleme
+
+```{r}
+clmethods = c("kmeans", "pam", "hierarchical")
+intern = clValid(pc12, nClust = 2:4, clMethods = clmethods, validation = "internal")
+```
+
+```{r}
+summary(intern)
+```
+
+```{r, warning=FALSE}
+# dbScan Dunn skor
+db_stats = cluster.stats(dist(pc12), densb$cluster)
+db_stats$dunn
+```
+
+```{r}
+# Mclust Dunn skor
+mod_stats = cluster.stats(dist(pc12), modbased$classification)
+mod_stats$dunn
+```
+
+### Algoritma Seçimi
+
+Verinin iki sınıflı olduğu bilindiğinden ona göre sıralama yapılacaktır.
+
+- Dunn Skorları :
+
+  1. hierarchical -> 0.0637
+  2. dbscan       -> 0.0194
+  3. pam          -> 0.0133
+  4. kmeans       -> 0.0058
+  5. Mclust       -> 0.0023
+  
+  
+## Oluşturulan Kümelerin Doğruluğu
+
+- Dunn küme geçerliliği istatistiği skoru en yüksek olan hiyerarşik kümeleme yöntemi seçilmiştir. 
+
+
+```{r}
+grup[grup == 1] = "M"
+grup[grup == 2] = "B"
+final_data = data.frame(df$Diagnosis, as.factor(grup), pc12)
+final_data = `colnames<-`(final_data, c("Real_Diagnosis", "Cluster_Result", "Dim.1", "Dim.2"))
+head(final_data)
+```
+
+```{r}
+summary(final_data)
+```
+
+- Sayı bakımından değerler yakın görünse de sınıf tahminlemesi açısından kontrol edilmelidir.
+
+```{r}
+counter = 0
+for (i in 1:569){
+  if (final_data$Real_Diagnosis[i] == final_data$Cluster_Result[i]){
+    counter = counter + 1
+  }
+}
+accuracy = counter/569
+cat("İsabet Oranı : ", accuracy*100)
+```
+
+- İsabet oranının ~%87 olması kümeleme işlemimizin isabetli kümeleme yaptığını göstermektedir. 
+
+```{r}
+# Confusion Matrix
+confusionMatrix(final_data$Real_Diagnosis, final_data$Cluster_Result, positive = "M")
+```
+
+- İsabet oranına ek olarak, sağlık ile ilgili bir veri seti olduğundan özellikle "Specificity" değerinin yüksek olması bizim için büyük önem arz etmektedir. Aşağıda da bu özelliğin değeri gösterilmektedir.
+  
+  1. Sensitivity (TP/P), kötü huylu olarak belirlenen tümörlerin gerçekte kötü huylu olma oranı : 0.8944
+  2. Specificity (TN/N), iyi huylu olarak belirlenen tümörlerin gerçekte iyi huylu olma oranı : 0.8689
+
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+plot(templist$Dim.1, templist$Dim.2, 
+     col = templist$df.Diagnosis, 
+     main = "Real Diagnosis", 
+     xlab="PC1", ylab="PC2",
+     pch = 19)
+legend("topright", legend = c("Benign", "Malignant"), col=c("black", "red"), pch=19)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+plot(final_data$Dim.1, final_data$Dim.2, 
+     col = final_data$Cluster_Result, 
+     main = "Cluster Result", 
+     xlab="PC1", ylab="PC2",
+     pch = 19)
+legend("topright", legend = c("Benign", "Malignant"), col=c("black", "red"), pch=19)
+```
+
+- Grafikler ile karşılaştırıldığında da kümeleme sonucu ile gerçek sınıf değerleri arasındaki yüksek benzerlik fark edilmektedir.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
